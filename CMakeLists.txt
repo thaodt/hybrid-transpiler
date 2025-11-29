@@ -31,6 +31,8 @@ set(SOURCES
     src/transpiler.cpp
     src/ir/ir_builder.cpp
     src/parser/type_mapper.cpp
+    src/parser/parser.cpp
+    src/parser/simple_cpp_parser.cpp
     src/codegen/codegen_base.cpp
     src/codegen/rust/rust_codegen.cpp
     src/codegen/go/go_codegen.cpp
