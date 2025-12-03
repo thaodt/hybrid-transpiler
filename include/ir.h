@@ -108,6 +108,37 @@ public:
 };
 
 /**
+ * Template parameter representation
+ */
+class TemplateParameter {
+public:
+    enum Kind {
+        Type,           // typename T or class T
+        NonType,        // int N
+        Template        // template<typename> class C
+    };
+
+    Kind kind;
+    std::string name;
+    std::string default_value;
+
+    // For non-type parameters
+    std::shared_ptr<Type> param_type;
+
+    // Constraints (C++20 concepts)
+    std::vector<std::string> constraints;
+};
+
+/**
+ * Template specialization information
+ */
+class TemplateSpecialization {
+public:
+    bool is_partial = false;
+    std::vector<std::string> specialized_args;
+};
+
+/**
  * Function representation
  */
 class Function {
@@ -132,6 +163,11 @@ public:
     ExceptionSpec exception_spec;
     std::vector<TryCatchBlock> try_catch_blocks;
     bool may_throw = false;  // Analysis result: function may throw
+
+    // Template information
+    bool is_template = false;
+    std::vector<TemplateParameter> template_parameters;
+    TemplateSpecialization specialization;
 };
 
 /**
@@ -148,7 +184,8 @@ public:
 
     // Template information
     bool is_template = false;
-    std::vector<std::string> template_params;
+    std::vector<TemplateParameter> template_parameters;
+    TemplateSpecialization specialization;
 
     // Access control
     struct AccessSection {

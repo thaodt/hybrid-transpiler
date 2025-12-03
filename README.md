@@ -302,6 +302,20 @@ func (this *FileReader) ReadFile(path string) (string, error) {
 | Multiple catch clauses | Pattern matching on error type | Type assertion in defer | Type-specific handling |
 | RAII + exceptions | `Drop` trait (automatic) | `defer` statement | Cleanup guaranteed |
 
+### Template/Generic Conversion
+
+| C++ Template Feature | Rust Generic | Go Generic | Notes |
+|---------------------|--------------|------------|-------|
+| `template<typename T>` | `<T>` | `[T any]` | Basic type parameter |
+| `template<typename T, typename U>` | `<T, U>` | `[T any, U any]` | Multiple type parameters |
+| `template<typename T, int N>` | `<T, const N: usize>` | N/A | Const generics (Rust only) |
+| `template<template<typename> class C>` | Higher-kinded types (limited) | N/A | Template template parameters |
+| Template specialization | Trait implementation | Type switch | Different approaches |
+| `requires` (C++20 concepts) | Trait bounds (`T: Trait`) | Interface constraints | Compile-time constraints |
+| Default template parameters | Default generic parameters | N/A | Fallback types |
+| SFINAE | Trait bounds / where clauses | Interface methods | Substitution failure patterns |
+| Variadic templates | Tuples / macros | Variadic functions (limited) | Multiple arguments |
+
 ## Project Structure
 
 ```
@@ -311,29 +325,32 @@ hybrid-transpiler/
 │   │   ├── ast_builder.cpp
 │   │   ├── type_resolver.cpp
 │   │   ├── stl_container_mapper.cpp        # STL detection
-│   │   └── exception_analyzer.cpp          # NEW: Exception analysis
+│   │   ├── exception_analyzer.cpp          # Exception analysis
+│   │   └── template_analyzer.cpp           # NEW: Template analysis
 │   ├── ir/               # Intermediate representation
 │   │   ├── ir_builder.cpp
 │   │   ├── type_system.cpp
 │   │   └── ownership_analyzer.cpp
 │   ├── codegen/
 │   │   ├── rust/         # Rust code generator
-│   │   │   ├── rust_codegen.cpp            # Updated: Exception conversion
+│   │   │   ├── rust_codegen.cpp            # Updated: Generics support
 │   │   │   └── rust_formatter.cpp
 │   │   └── go/           # Go code generator
-│   │       ├── go_codegen.cpp              # Updated: Exception conversion
+│   │       ├── go_codegen.cpp              # Updated: Generics support
 │   │       └── go_formatter.cpp
 │   └── main.cpp
 ├── include/              # Public headers
-│   └── ir.h              # Updated: Exception types added
+│   └── ir.h              # Updated: Template parameters added
 ├── tests/                # Test cases
 ├── examples/             # Example transformations
 │   ├── stl_containers.cpp
 │   ├── stl_containers_expected.rs
 │   ├── stl_containers_expected.go
-│   ├── exception_handling.cpp              # NEW: Exception examples
-│   ├── exception_handling_expected.rs      # NEW: Expected Rust output
-│   └── exception_handling_expected.go      # NEW: Expected Go output
+│   ├── exception_handling.cpp
+│   ├── exception_handling_expected.rs
+│   ├── exception_handling_expected.go
+│   ├── templates.cpp                       # NEW: Template examples
+│   └── templates_expected.rs               # NEW: Expected Rust output
 ├── docs/                 # Documentation
 ├── CMakeLists.txt
 └── README.md
@@ -391,7 +408,7 @@ Execution time (Intel Core i7-12700K, 32GB RAM):
 
 ### v0.2 (Current)
 - [x] **Exception to Result/error conversion** - ✅ Implemented!
-- [ ] Full template support
+- [x] **Full template support** - ✅ Implemented!
 - [ ] Advanced ownership analysis
 
 ### v0.3 (Planned)

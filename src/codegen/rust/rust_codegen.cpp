@@ -34,8 +34,16 @@ std::string RustCodeGenerator::generate(const IR& ir) {
 }
 
 void RustCodeGenerator::generateClass(const ClassDecl& class_decl) {
-    // Generate struct definition
-    writeLine("pub struct " + sanitizeName(class_decl.name) + " {");
+    // Generate struct definition with generics
+    std::string struct_decl = "pub struct " + sanitizeName(class_decl.name);
+
+    // Add generic parameters if template
+    if (class_decl.is_template && !class_decl.template_parameters.empty()) {
+        struct_decl += convertTemplateParametersToRust(class_decl.template_parameters);
+    }
+
+    struct_decl += " {";
+    writeLine(struct_decl);
     indent();
 
     for (const auto& field : class_decl.fields) {
@@ -52,7 +60,22 @@ void RustCodeGenerator::generateClass(const ClassDecl& class_decl) {
 
     // Generate impl block for methods
     if (!class_decl.methods.empty()) {
-        writeLine("impl " + sanitizeName(class_decl.name) + " {");
+        std::string impl_decl = "impl";
+
+        // Add generic parameters
+        if (class_decl.is_template && !class_decl.template_parameters.empty()) {
+            impl_decl += convertTemplateParametersToRust(class_decl.template_parameters);
+        }
+
+        impl_decl += " " + sanitizeName(class_decl.name);
+
+        // Add generic type arguments
+        if (class_decl.is_template && !class_decl.template_parameters.empty()) {
+            impl_decl += convertTemplateArgsToRust(class_decl.template_parameters);
+        }
+
+        impl_decl += " {";
+        writeLine(impl_decl);
         indent();
 
         for (const auto& method : class_decl.methods) {
@@ -79,10 +102,17 @@ void RustCodeGenerator::generateFunction(const Function& func) {
 
     // Constructor becomes 'new' in Rust
     if (func.is_constructor) {
-        sig << "pub fn new(";
+        sig << "pub fn new";
     } else {
-        sig << "pub fn " << sanitizeName(func.name) << "(";
+        sig << "pub fn " << sanitizeName(func.name);
     }
+
+    // Add generic parameters for template functions
+    if (func.is_template && !func.template_parameters.empty()) {
+        sig << convertTemplateParametersToRust(func.template_parameters);
+    }
+
+    sig << "(";
 
     // Add self parameter for methods
     if (!func.is_static && !func.is_constructor) {
@@ -396,6 +426,69 @@ std::string RustCodeGenerator::sanitizeName(const std::string& name) {
     }
 
     return result;
+}
+
+std::string RustCodeGenerator::convertTemplateParametersToRust(const std::vector<TemplateParameter>& params) {
+    if (params.empty()) {
+        return "";
+    }
+
+    std::stringstream ss;
+    ss << "<";
+
+    bool first = true;
+    for (const auto& param : params) {
+        if (!first) ss << ", ";
+        first = false;
+
+        if (param.kind == TemplateParameter::Type) {
+            ss << param.name;
+
+            // Add trait bounds if constraints exist
+            if (!param.constraints.empty()) {
+                ss << ": ";
+                for (size_t i = 0; i < param.constraints.size(); ++i) {
+                    if (i > 0) ss << " + ";
+                    ss << param.constraints[i];
+                }
+            }
+        } else if (param.kind == TemplateParameter::NonType) {
+            // Rust const generics
+            ss << "const " << param.name << ": ";
+            if (param.param_type) {
+                ss << convertType(param.param_type);
+            } else {
+                ss << "usize";
+            }
+        }
+    }
+
+    ss << ">";
+    return ss.str();
+}
+
+std::string RustCodeGenerator::convertTemplateArgsToRust(const std::vector<TemplateParameter>& params) {
+    if (params.empty()) {
+        return "";
+    }
+
+    std::stringstream ss;
+    ss << "<";
+
+    bool first = true;
+    for (const auto& param : params) {
+        if (!first) ss << ", ";
+        first = false;
+
+        if (param.kind == TemplateParameter::Type) {
+            ss << param.name;
+        } else if (param.kind == TemplateParameter::NonType) {
+            ss << param.name;
+        }
+    }
+
+    ss << ">";
+    return ss.str();
 }
 
 } // namespace hybrid
