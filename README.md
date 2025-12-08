@@ -260,7 +260,138 @@ func (this *FileReader) ReadFile(path string) (string, error) {
 }
 ```
 
-### Example 4: Multithreading
+### Example 4: Async/Await (C++20 Coroutines)
+
+**Input (C++):**
+```cpp
+#include <coroutine>
+#include <future>
+
+// Coroutine with co_await
+template<typename T>
+struct Future {
+    struct promise_type {
+        T value;
+        /* ... promise implementation ... */
+    };
+    std::coroutine_handle<promise_type> handle;
+};
+
+Future<int> computeAsync(int x, int y) {
+    // Async computation
+    int result = x + y;
+    co_return result;
+}
+
+Future<int> chainedAsync(int value) {
+    auto result1 = co_await computeAsync(value, 10);
+    auto result2 = co_await computeAsync(result1, 20);
+    co_return result2;
+}
+
+// std::async usage
+class AsyncCalculator {
+public:
+    int performCalculation(int a, int b) {
+        auto future1 = std::async(std::launch::async, [](int x) {
+            return x * 2;
+        }, a);
+
+        auto future2 = std::async(std::launch::async, [](int x) {
+            return x * 3;
+        }, b);
+
+        return future1.get() + future2.get();
+    }
+};
+```
+
+**Output (Rust):**
+```rust
+use tokio;
+
+pub async fn compute_async(x: i32, y: i32) -> i32 {
+    // Async computation
+    let result = x + y;
+    return result;
+}
+
+pub async fn chained_async(value: i32) -> i32 {
+    // co_await converted to .await
+    let result1 = compute_async(value, 10).await;
+    let result2 = compute_async(result1, 20).await;
+    return result2;
+}
+
+pub struct AsyncCalculator {}
+
+impl AsyncCalculator {
+    pub async fn perform_calculation(&self, a: i32, b: i32) -> i32 {
+        let future1 = tokio::spawn(async move {
+            a * 2
+        });
+
+        let future2 = tokio::spawn(async move {
+            b * 3
+        });
+
+        future1.await.unwrap() + future2.await.unwrap()
+    }
+}
+```
+
+**Output (Go):**
+```go
+func ComputeAsync(x, y int32) <-chan int32 {
+    resultChan := make(chan int32, 1)
+
+    go func() {
+        defer close(resultChan)
+
+        // Async computation
+        result := x + y
+        resultChan <- result
+    }()
+
+    return resultChan
+}
+
+func ChainedAsync(value int32) <-chan int32 {
+    resultChan := make(chan int32, 1)
+
+    go func() {
+        defer close(resultChan)
+
+        // co_await converted to channel receive
+        result1 := <-ComputeAsync(value, 10)
+        result2 := <-ComputeAsync(result1, 20)
+        resultChan <- result2
+    }()
+
+    return resultChan
+}
+
+type AsyncCalculator struct{}
+
+func (this *AsyncCalculator) PerformCalculation(a, b int32) int32 {
+    result1Chan := make(chan int32, 1)
+    result2Chan := make(chan int32, 1)
+
+    go func() {
+        defer close(result1Chan)
+        result1Chan <- a * 2
+    }()
+
+    go func() {
+        defer close(result2Chan)
+        result2Chan <- b * 3
+    }()
+
+    return <-result1Chan + <-result2Chan
+}
+```
+
+### Example 5: Multithreading
 
 **Input (C++):**
 ```cpp
@@ -375,6 +506,8 @@ func (this *ThreadSafeCounter) RunParallel() {
 | RAII | Drop trait | defer | ✅ Supported |
 | **STL Containers** | **std::collections** | **slices/maps** | **✅ Supported** |
 | **Multithreading** | **std::thread/Arc<Mutex>** | **goroutines/sync** | **✅ Supported** |
+| **Async/Await** | **async/await** | **goroutines/channels** | **✅ Supported** |
+| **Coroutines** | **async fn** | **channel-based** | **✅ Supported** |
 | Operator Overload | Traits | N/A | ⚠️ Partial |
 | Multiple Inheritance | Trait composition | N/A | ⚠️ Partial |
 | Virtual Functions | dyn Trait | Interfaces | ✅ Supported |
@@ -439,6 +572,27 @@ func (this *ThreadSafeCounter) RunParallel() {
 | SFINAE | Trait bounds / where clauses | Interface methods | Substitution failure patterns |
 | Variadic templates | Tuples / macros | Variadic functions (limited) | Multiple arguments |
 
+### Async/Await Conversion
+
+| C++20 Coroutine Feature | Rust Conversion | Go Conversion | Notes |
+|------------------------|-----------------|---------------|-------|
+| `co_await expr` | `expr.await` | `result := <-channel` | Direct await vs channel receive |
+| `co_return value` | `return value` | `resultChan <- value; return` | Return vs channel send |
+| `co_yield value` | `yield value` (Stream) | `yieldChan <- value` | Generator pattern |
+| `std::future<T>` | `impl Future<Output = T>` | `<-chan T` | Future/Promise pattern |
+| `std::promise<T>` | `oneshot::Sender<T>` | `chan<- T` | Promise side |
+| `future.get()` | `future.await` | `<-future` | Block and wait |
+| `std::async(func, args)` | `tokio::spawn(async { func(args).await })` | `go func() { func(args) }()` | Launch async task |
+| Coroutine function | `async fn name() -> T` | `func Name() <-chan T` | Async function signature |
+| Generator (co_yield) | `impl Stream<Item = T>` | `<-chan T` | Lazy sequence generation |
+| Multiple awaits | Sequential `.await` calls | Sequential `<-channel` calls | Chained async operations |
+
+**Key Differences:**
+- **Rust**: Uses native `async/await` syntax with explicit `.await` points
+- **Go**: Uses channels and goroutines; async functions return channels
+- **Generators**: Rust uses `Stream` trait, Go uses channels naturally
+- **Error handling**: Rust combines with `Result`, Go uses channel + error return
+
 ## Project Structure
 
 ```
@@ -450,7 +604,8 @@ hybrid-transpiler/
 │   │   ├── stl_container_mapper.cpp        # STL detection
 │   │   ├── exception_analyzer.cpp          # Exception analysis
 │   │   ├── template_analyzer.cpp           # Template analysis
-│   │   └── thread_analyzer.cpp             # NEW: Threading analysis
+│   │   ├── thread_analyzer.cpp             # Threading analysis
+│   │   └── async_analyzer.cpp              # NEW: Async/coroutine analysis
 │   ├── ir/               # Intermediate representation
 │   │   ├── ir_builder.cpp
 │   │   ├── type_system.cpp
@@ -476,9 +631,12 @@ hybrid-transpiler/
 │   ├── exception_handling_expected.go
 │   ├── templates.cpp
 │   ├── templates_expected.rs
-│   ├── multithreading.cpp                  # NEW: Threading examples
-│   ├── multithreading_expected.rs          # NEW: Expected Rust output
-│   └── multithreading_expected.go          # NEW: Expected Go output
+│   ├── multithreading.cpp                  # Threading examples
+│   ├── multithreading_expected.rs          # Expected Rust output
+│   ├── multithreading_expected.go          # Expected Go output
+│   ├── async_await.cpp                     # NEW: Async/coroutine examples
+│   ├── async_await_expected.rs             # NEW: Expected Rust output
+│   └── async_await_expected.go             # NEW: Expected Go output
 ├── docs/                 # Documentation
 ├── CMakeLists.txt
 └── README.md
@@ -540,8 +698,12 @@ Execution time (Intel Core i7-12700K, 32GB RAM):
 - [x] **Multi-threaded code conversion** - ✅ Implemented!
 - [ ] Advanced ownership analysis
 
-### v0.3 (Planned)
-- [ ] Async/await transformation
+### v0.3 (Current - NEW!)
+- [x] **Async/await transformation** - ✅ Implemented!
+  - C++20 coroutines → Rust async/await
+  - C++20 coroutines → Go goroutines + channels
+  - std::future/promise → Rust futures
+  - std::async → tokio::spawn / goroutines
 - [ ] FFI generation support
 - [ ] Advanced data race detection
 

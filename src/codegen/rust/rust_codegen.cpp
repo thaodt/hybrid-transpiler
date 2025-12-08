@@ -98,6 +98,12 @@ void RustCodeGenerator::generateClass(const ClassDecl& class_decl) {
 }
 
 void RustCodeGenerator::generateFunction(const Function& func) {
+    // If function is async or coroutine, use async generation
+    if (func.is_async || func.coroutine_info.is_coroutine) {
+        generateAsyncFunction(func);
+        return;
+    }
+
     std::stringstream sig;
 
     // Constructor becomes 'new' in Rust
@@ -412,6 +418,35 @@ std::string RustCodeGenerator::convertType(const std::shared_ptr<Type>& type) {
 
         case TypeKind::StdSharedLock:
             return "std::sync::RwLockReadGuard";
+
+        // Async/Coroutine types
+        case TypeKind::StdFuture:
+            if (!type->template_args.empty()) {
+                return "impl std::future::Future<Output = " +
+                       convertType(type->template_args[0]) + ">";
+            }
+            return "impl std::future::Future<Output = ()>";
+
+        case TypeKind::StdPromise:
+            if (!type->template_args.empty()) {
+                return "futures::channel::oneshot::Sender<" +
+                       convertType(type->template_args[0]) + ">";
+            }
+            return "futures::channel::oneshot::Sender<()>";
+
+        case TypeKind::StdAsync:
+        case TypeKind::Task:
+            if (!type->template_args.empty()) {
+                return "impl std::future::Future<Output = " +
+                       convertType(type->template_args[0]) + ">";
+            }
+            return "impl std::future::Future<Output = ()>";
+
+        case TypeKind::Coroutine:
+            if (!type->template_args.empty()) {
+                return "impl Stream<Item = " + convertType(type->template_args[0]) + ">";
+            }
+            return "impl Stream<Item = ()>";
 
         case TypeKind::Struct:
         case TypeKind::Class:
@@ -754,6 +789,210 @@ void RustCodeGenerator::generateConditionVariable(const ConditionVariableInfo& c
                      ".wait_timeout(guard, Duration::from_secs(1)).unwrap();");
         }
     }
+}
+
+void RustCodeGenerator::generateAsyncFunction(const Function& func) {
+    std::stringstream sig;
+
+    // Generate async function signature
+    sig << "pub async fn " << sanitizeName(func.name);
+
+    // Add generic parameters for template functions
+    if (func.is_template && !func.template_parameters.empty()) {
+        sig << convertTemplateParametersToRust(func.template_parameters);
+    }
+
+    sig << "(";
+
+    // Add self parameter for methods
+    if (!func.is_static && !func.is_constructor) {
+        if (func.is_const) {
+            sig << "&self";
+        } else {
+            sig << "&mut self";
+        }
+
+        if (!func.parameters.empty()) {
+            sig << ", ";
+        }
+    }
+
+    // Add parameters
+    for (size_t i = 0; i < func.parameters.size(); ++i) {
+        const auto& param = func.parameters[i];
+        sig << sanitizeName(param.name) << ": " << convertType(param.type);
+
+        if (i < func.parameters.size() - 1) {
+            sig << ", ";
+        }
+    }
+
+    sig << ")";
+
+    // Return type
+    if (func.return_type->kind != TypeKind::Void) {
+        sig << " -> " << convertType(func.return_type);
+    }
+
+    writeLine(sig.str() + " {");
+    indent();
+
+    // Generate coroutine body
+    if (func.coroutine_info.is_coroutine) {
+        generateCoroutineBody(func);
+    } else if (!func.async_tasks.empty()) {
+        // Generate async task spawning
+        for (const auto& task : func.async_tasks) {
+            generateAsyncTask(task);
+        }
+    } else if (!func.futures.empty()) {
+        // Generate future handling
+        for (const auto& future : func.futures) {
+            generateFuture(future);
+        }
+    } else if (!func.body.empty()) {
+        writeLine("// Async function body:");
+        writeLine(func.body);
+    } else {
+        writeLine("todo!()");
+    }
+
+    dedent();
+    writeLine("}");
+}
+
+void RustCodeGenerator::generateCoroutineBody(const Function& func) {
+    const auto& coro_info = func.coroutine_info;
+
+    writeLine("// Converted from C++20 coroutine");
+    writeLine("");
+
+    if (coro_info.is_generator) {
+        writeLine("// Generator function (uses co_yield)");
+        writeLine("// Note: Consider using async streams or futures::stream::Stream");
+    }
+
+    // Generate body with async operations
+    for (const auto& async_op : coro_info.async_operations) {
+        generateAwaitExpression(async_op);
+    }
+
+    // Generate original function body if present
+    if (!func.body.empty()) {
+        writeLine("");
+        writeLine("// Original function body:");
+        writeLine(func.body);
+    }
+}
+
+void RustCodeGenerator::generateAwaitExpression(const AsyncOperation& op) {
+    std::stringstream ss;
+
+    switch (op.op_type) {
+        case AsyncOpType::CoAwait:
+            writeLine("// co_await converted to .await");
+            ss << "let result = " << op.expression << ".await;";
+            writeLine(ss.str());
+            break;
+
+        case AsyncOpType::CoReturn:
+            writeLine("// co_return converted to return");
+            if (!op.expression.empty()) {
+                ss << "return " << op.expression << ";";
+            } else {
+                ss << "return;";
+            }
+            writeLine(ss.str());
+            break;
+
+        case AsyncOpType::CoYield:
+            writeLine("// co_yield converted to yield (via Stream)");
+            writeLine("// Note: Rust async functions don't directly support yield");
+            writeLine("// Consider using futures::stream::Stream trait");
+            ss << "// yield " << op.expression << ";";
+            writeLine(ss.str());
+            break;
+    }
+}
+
+void RustCodeGenerator::generateAsyncTask(const AsyncTaskInfo& task) {
+    std::stringstream ss;
+
+    writeLine("// Async task: " + task.task_var_name);
+
+    if (!task.task_var_name.empty()) {
+        // Assigned to a variable
+        ss << "let " << sanitizeName(task.task_var_name)
+           << " = tokio::spawn(async move {";
+        writeLine(ss.str());
+        indent();
+
+        // Call the async function
+        ss.str("");
+        ss << sanitizeName(task.async_function_name) << "(";
+        for (size_t i = 0; i < task.arguments.size(); ++i) {
+            ss << task.arguments[i];
+            if (i < task.arguments.size() - 1) {
+                ss << ", ";
+            }
+        }
+        ss << ").await";
+        writeLine(ss.str());
+
+        dedent();
+        writeLine("});");
+
+        if (!task.detached) {
+            writeLine("");
+            writeLine("// Await task completion");
+            writeLine(sanitizeName(task.task_var_name) + ".await.unwrap();");
+        }
+    } else {
+        // Detached task
+        ss << "tokio::spawn(async move {";
+        writeLine(ss.str());
+        indent();
+
+        ss.str("");
+        ss << sanitizeName(task.async_function_name) << "(";
+        for (size_t i = 0; i < task.arguments.size(); ++i) {
+            ss << task.arguments[i];
+            if (i < task.arguments.size() - 1) {
+                ss << ", ";
+            }
+        }
+        ss << ").await";
+        writeLine(ss.str());
+
+        dedent();
+        writeLine("});");
+    }
+
+    writeLine("");
+}
+
+void RustCodeGenerator::generateFuture(const FutureInfo& future) {
+    std::stringstream ss;
+
+    writeLine("// Future: " + future.future_var_name);
+
+    if (!future.promise_var_name.empty()) {
+        // Create a oneshot channel (promise/future pair)
+        ss << "let (" << sanitizeName(future.promise_var_name)
+           << ", " << sanitizeName(future.future_var_name)
+           << ") = futures::channel::oneshot::channel::<"
+           << convertType(future.value_type) << ">();";
+        writeLine(ss.str());
+    } else {
+        // Just a future variable
+        ss << "// Future variable: " << future.future_var_name;
+        writeLine(ss.str());
+        ss.str("");
+        ss << "// Use .await to get the value";
+        writeLine(ss.str());
+    }
+
+    writeLine("");
 }
 
 } // namespace hybrid

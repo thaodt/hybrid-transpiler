@@ -51,6 +51,13 @@ private:
     void generateAtomicOperations(const AtomicInfo& atomic);
     void generateConditionVariable(const ConditionVariableInfo& cv);
 
+    // Async/Await code generation
+    void generateAsyncFunction(const Function& func);
+    void generateCoroutineBody(const Function& func);
+    void generateAwaitExpression(const AsyncOperation& op);
+    void generateAsyncTask(const AsyncTaskInfo& task);
+    void generateFuture(const FutureInfo& future);
+
     // Template code generation
     std::string convertTemplateParametersToRust(const std::vector<TemplateParameter>& params);
     std::string convertTemplateArgsToRust(const std::vector<TemplateParameter>& params);
@@ -79,6 +86,12 @@ private:
     void generateMutexLock(const LockInfo& lock);
     void generateAtomicOperations(const AtomicInfo& atomic);
     void generateConditionVariable(const ConditionVariableInfo& cv);
+
+    // Async/Goroutine code generation
+    void generateAsyncFunction(const Function& func);
+    void generateCoroutineAsGoroutine(const Function& func);
+    void generateChannelOperation(const AsyncOperation& op);
+    void generateAsyncTask(const AsyncTaskInfo& task);
 
     std::string convertType(const std::shared_ptr<Type>& type);
     std::string sanitizeName(const std::string& name);

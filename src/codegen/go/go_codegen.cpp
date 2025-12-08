@@ -133,6 +133,12 @@ void GoCodeGenerator::generateClass(const ClassDecl& class_decl) {
 }
 
 void GoCodeGenerator::generateFunction(const Function& func, const std::string& receiver_type) {
+    // If function is async or coroutine, use async generation
+    if (func.is_async || func.coroutine_info.is_coroutine) {
+        generateAsyncFunction(func);
+        return;
+    }
+
     std::stringstream sig;
 
     sig << "func ";
@@ -393,6 +399,28 @@ std::string GoCodeGenerator::convertType(const std::shared_ptr<Type>& type) {
         case TypeKind::StdUniqueLock:
         case TypeKind::StdSharedLock:
             return "/* defer unlock pattern */";
+
+        // Async/Coroutine types
+        case TypeKind::StdFuture:
+        case TypeKind::StdAsync:
+        case TypeKind::Task:
+            if (!type->template_args.empty()) {
+                return "chan " + convertType(type->template_args[0]);
+            }
+            return "chan interface{}";
+
+        case TypeKind::StdPromise:
+            if (!type->template_args.empty()) {
+                return "chan<- " + convertType(type->template_args[0]);
+            }
+            return "chan<- interface{}";
+
+        case TypeKind::Coroutine:
+            // Coroutine as channel iterator
+            if (!type->template_args.empty()) {
+                return "<-chan " + convertType(type->template_args[0]);
+            }
+            return "<-chan interface{}";
 
         case TypeKind::Struct:
         case TypeKind::Class:
@@ -660,6 +688,183 @@ void GoCodeGenerator::generateConditionVariable(const ConditionVariableInfo& cv)
             writeLine("// Use channels or time.After for timeout behavior");
         }
     }
+}
+
+void GoCodeGenerator::generateAsyncFunction(const Function& func) {
+    std::stringstream sig;
+
+    // Generate function signature that returns a channel
+    sig << "func ";
+
+    // Function name
+    std::string func_name = capitalize(sanitizeName(func.name));
+    sig << func_name << "(";
+
+    // Add parameters
+    for (size_t i = 0; i < func.parameters.size(); ++i) {
+        const auto& param = func.parameters[i];
+        sig << sanitizeName(param.name) << " " << convertType(param.type);
+
+        if (i < func.parameters.size() - 1) {
+            sig << ", ";
+        }
+    }
+
+    sig << ")";
+
+    // Return type - channel for async result
+    if (func.return_type->kind != TypeKind::Void) {
+        sig << " <-chan " << convertType(func.return_type);
+    } else {
+        sig << " <-chan struct{}";
+    }
+
+    writeLine(sig.str() + " {");
+    indent();
+
+    // Create result channel
+    if (func.return_type->kind != TypeKind::Void) {
+        writeLine("resultChan := make(chan " + convertType(func.return_type) + ", 1)");
+    } else {
+        writeLine("resultChan := make(chan struct{}, 1)");
+    }
+    writeLine("");
+
+    // Launch goroutine
+    writeLine("go func() {");
+    indent();
+    writeLine("defer close(resultChan)");
+    writeLine("");
+
+    // Generate coroutine body
+    if (func.coroutine_info.is_coroutine) {
+        generateCoroutineAsGoroutine(func);
+    } else if (!func.async_tasks.empty()) {
+        // Generate async task spawning
+        for (const auto& task : func.async_tasks) {
+            generateAsyncTask(task);
+        }
+    } else if (!func.body.empty()) {
+        writeLine("// Async function body:");
+        writeLine(func.body);
+    }
+
+    // Send result
+    if (func.return_type->kind != TypeKind::Void) {
+        writeLine("");
+        writeLine("// Send result to channel");
+        writeLine("resultChan <- result");
+    } else {
+        writeLine("");
+        writeLine("// Signal completion");
+        writeLine("resultChan <- struct{}{}");
+    }
+
+    dedent();
+    writeLine("}()");
+    writeLine("");
+    writeLine("return resultChan");
+
+    dedent();
+    writeLine("}");
+}
+
+void GoCodeGenerator::generateCoroutineAsGoroutine(const Function& func) {
+    const auto& coro_info = func.coroutine_info;
+
+    writeLine("// Converted from C++20 coroutine");
+    writeLine("");
+
+    if (coro_info.is_generator) {
+        writeLine("// Generator function (uses co_yield)");
+        writeLine("// Note: Use channel to yield values");
+    }
+
+    // Generate body with async operations converted to channel operations
+    for (const auto& async_op : coro_info.async_operations) {
+        generateChannelOperation(async_op);
+    }
+
+    // Generate original function body if present
+    if (!func.body.empty()) {
+        writeLine("");
+        writeLine("// Original function body:");
+        writeLine(func.body);
+    }
+}
+
+void GoCodeGenerator::generateChannelOperation(const AsyncOperation& op) {
+    std::stringstream ss;
+
+    switch (op.op_type) {
+        case AsyncOpType::CoAwait:
+            writeLine("// co_await converted to channel receive");
+            ss << "result := <-" << op.expression;
+            writeLine(ss.str());
+            break;
+
+        case AsyncOpType::CoReturn:
+            writeLine("// co_return converted to return");
+            if (!op.expression.empty()) {
+                ss << "result = " << op.expression;
+                writeLine(ss.str());
+            }
+            writeLine("return");
+            break;
+
+        case AsyncOpType::CoYield:
+            writeLine("// co_yield converted to channel send");
+            writeLine("// Note: For generators, use a separate yield channel");
+            ss << "// yieldChan <- " << op.expression;
+            writeLine(ss.str());
+            break;
+    }
+}
+
+void GoCodeGenerator::generateAsyncTask(const AsyncTaskInfo& task) {
+    std::stringstream ss;
+
+    writeLine("// Async task: " + task.task_var_name);
+
+    if (!task.task_var_name.empty()) {
+        // Assigned to a variable (returns channel)
+        ss << sanitizeName(task.task_var_name) << " := "
+           << capitalize(sanitizeName(task.async_function_name)) << "(";
+
+        for (size_t i = 0; i < task.arguments.size(); ++i) {
+            ss << task.arguments[i];
+            if (i < task.arguments.size() - 1) {
+                ss << ", ";
+            }
+        }
+        ss << ")";
+        writeLine(ss.str());
+
+        if (!task.detached) {
+            writeLine("");
+            writeLine("// Wait for task completion");
+            writeLine("<-" + sanitizeName(task.task_var_name));
+        }
+    } else {
+        // Detached task (fire and forget)
+        writeLine("go func() {");
+        indent();
+
+        ss << capitalize(sanitizeName(task.async_function_name)) << "(";
+        for (size_t i = 0; i < task.arguments.size(); ++i) {
+            ss << task.arguments[i];
+            if (i < task.arguments.size() - 1) {
+                ss << ", ";
+            }
+        }
+        ss << ")";
+        writeLine(ss.str());
+
+        dedent();
+        writeLine("}()");
+    }
+
+    writeLine("");
 }
 
 } // namespace hybrid

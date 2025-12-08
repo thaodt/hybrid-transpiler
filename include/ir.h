@@ -44,7 +44,13 @@ enum class TypeKind {
     StdAtomic,
     StdLockGuard,
     StdUniqueLock,
-    StdSharedLock
+    StdSharedLock,
+    // Async/Coroutine types
+    StdFuture,
+    StdPromise,
+    StdAsync,
+    Coroutine,
+    Task
 };
 
 /**
@@ -216,6 +222,66 @@ public:
 };
 
 /**
+ * Async/Coroutine operation types
+ */
+enum class AsyncOpType {
+    CoAwait,        // co_await expression
+    CoReturn,       // co_return statement
+    CoYield         // co_yield expression
+};
+
+/**
+ * Async operation information
+ */
+class AsyncOperation {
+public:
+    AsyncOpType op_type;
+    std::string expression;      // The expression being awaited/returned/yielded
+    std::string awaited_type;    // Type of the awaited value
+    int line_number = 0;
+};
+
+/**
+ * Coroutine information
+ */
+class CoroutineInfo {
+public:
+    bool is_coroutine = false;
+    std::shared_ptr<Type> promise_type;    // Promise type for the coroutine
+    std::shared_ptr<Type> return_type;     // Return type (usually Task<T> or similar)
+    std::vector<AsyncOperation> async_operations;
+
+    // Coroutine traits
+    bool uses_co_await = false;
+    bool uses_co_return = false;
+    bool uses_co_yield = false;
+    bool is_generator = false;  // Uses co_yield
+};
+
+/**
+ * Future/Promise information
+ */
+class FutureInfo {
+public:
+    std::string future_var_name;
+    std::shared_ptr<Type> value_type;
+    std::string promise_var_name;
+    bool is_shared_future = false;
+};
+
+/**
+ * Async task information
+ */
+class AsyncTaskInfo {
+public:
+    std::string task_var_name;
+    std::string async_function_name;
+    std::vector<std::string> arguments;
+    std::shared_ptr<Type> result_type;
+    bool detached = false;
+};
+
+/**
  * Function representation
  */
 class Function {
@@ -252,6 +318,12 @@ public:
     std::vector<AtomicInfo> atomic_operations;
     std::vector<ConditionVariableInfo> condition_variables;
     bool uses_threading = false;
+
+    // Async/Coroutine information
+    CoroutineInfo coroutine_info;
+    std::vector<FutureInfo> futures;
+    std::vector<AsyncTaskInfo> async_tasks;
+    bool is_async = false;  // Async function (returns Future/Task)
 };
 
 /**

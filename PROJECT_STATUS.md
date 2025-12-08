@@ -111,6 +111,7 @@
 | **Exception Handling** | ✅ | ✅ | **Fully supported** |
 | **Templates/Generics** | ✅ | ✅ | **Fully supported** |
 | **Multithreading** | ✅ | ✅ | **Fully supported** |
+| **Async/Await (C++20 Coroutines)** | ✅ | ✅ | **Fully supported** |
 
 ### Partially Supported Features
 
@@ -209,13 +210,19 @@ make test
 
 ## Development Roadmap
 
-### Version 0.2 (Current - Completed!)
+### Version 0.2 (Completed!)
 - [x] Exception to Result/error conversion - ✅ **Completed**
 - [x] Template/Generic support - ✅ **Completed**
 - [x] Multithreading conversion - ✅ **Completed**
 - [x] STL container optimization - ✅ **Completed**
 
-### Version 0.3 (Next Release)
+### Version 0.3 (Current - NEW!)
+- [x] **Async/await conversion** - ✅ **Completed**
+  - C++20 coroutines (`co_await`, `co_return`, `co_yield`) → Rust `async/await`
+  - C++20 coroutines → Go goroutines + channels
+  - `std::future`/`std::promise` → Rust futures / Go channels
+  - `std::async` → `tokio::spawn` / Go goroutines
+  - Generator support (`co_yield`) → Rust `Stream` / Go channels
 - [ ] Full Clang LibTooling integration
 - [ ] Complete AST traversal
 - [ ] Template instantiation
@@ -229,10 +236,9 @@ make test
 - [ ] Macro handling
 - [ ] Advanced data race detection
 - [ ] Thread safety analysis
+- [ ] FFI generation
 
 ### Version 0.5 (Long-term)
-- [ ] Async/await conversion
-- [ ] FFI generation
 - [ ] IDE plugin (VSCode)
 - [ ] CI/CD integration
 - [ ] Interactive migration tool
@@ -243,7 +249,7 @@ make test
 2. **Templates:** Basic support only, complex metaprogramming not handled
 3. **Macros:** Not expanded, need preprocessor integration
 4. **Inheritance:** Noted but not fully converted to traits/interfaces
-5. **Exception Handling:** Not yet converted to Result/error types
+5. **Coroutine Promise Types:** Generic promise_type handling not yet fully implemented
 
 ## Performance Characteristics
 
