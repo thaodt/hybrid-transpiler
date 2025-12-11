@@ -112,13 +112,14 @@
 | **Templates/Generics** | ✅ | ✅ | **Fully supported** |
 | **Multithreading** | ✅ | ✅ | **Fully supported** |
 | **Async/Await (C++20 Coroutines)** | ✅ | ✅ | **Fully supported** |
+| **Inheritance & Virtual Functions** | ✅ | ✅ | **Fully supported** |
 
 ### Partially Supported Features
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| Inheritance | ⚠️ | Base classes noted, traits suggested |
 | Operator Overloading | ⚠️ | Rust: traits, Go: N/A |
+| Multiple Inheritance | ⚠️ | Can be mapped to multiple trait/interface implementations |
 
 ### Not Yet Supported
 
@@ -223,11 +224,15 @@ make test
   - `std::future`/`std::promise` → Rust futures / Go channels
   - `std::async` → `tokio::spawn` / Go goroutines
   - Generator support (`co_yield`) → Rust `Stream` / Go channels
+- [x] **Inheritance and virtual functions** - ✅ **Completed**
+  - C++ inheritance → Rust traits
+  - C++ inheritance → Go interfaces
+  - Virtual method detection and conversion
+  - Pure virtual functions (abstract classes) → trait/interface definitions
+  - Trait/interface implementation generation
 - [ ] Full Clang LibTooling integration
 - [ ] Complete AST traversal
 - [ ] Template instantiation
-- [ ] Inheritance mapping (traits/interfaces)
-- [ ] Virtual function support
 - [ ] Advanced ownership analysis
 - [ ] Lifetime annotation (Rust)
 - [ ] Multi-file project support

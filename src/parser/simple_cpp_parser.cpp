@@ -214,10 +214,10 @@ private:
      * Parse method declarations/definitions
      */
     void parseMethods(const std::string& section, const std::string& access, ClassDecl& class_decl) {
-        // Match method signatures (including constructors)
-        // Pattern: [type] name(params) [const] [{ body }]
+        // Match method signatures (including constructors, virtual, static)
+        // Pattern: [virtual] [static] [type] name(params) [const] [= 0] [{ body } | ;]
         std::regex method_pattern(
-            R"((?:virtual\s+)?(?:static\s+)?(?:([a-zA-Z_][\w:<>,\s*&]*?)\s+)?([a-zA-Z_]\w*)\s*\(([^)]*)\)\s*(const)?\s*(?:=\s*0)?\s*(?:\{([^}]*(?:\{[^}]*\}[^}]*)*)\}|;))",
+            R"((virtual\s+)?(static\s+)?(?:([a-zA-Z_][\w:<>,\s*&]*?)\s+)?([a-zA-Z_]\w*)\s*\(([^)]*)\)\s*(const)?\s*(=\s*0)?\s*(?:\{([^}]*(?:\{[^}]*\}[^}]*)*)\}|;))",
             std::regex::ECMAScript
         );
 
@@ -228,28 +228,37 @@ private:
             std::smatch match = *it;
 
             Function method;
-            method.name = match[2].str();
+            method.name = match[4].str();
+
+            // Check if virtual
+            method.is_virtual = match[1].matched;
+
+            // Check if static
+            method.is_static = match[2].matched;
+
+            // Check if pure virtual (= 0)
+            method.is_pure_virtual = match[7].matched;
 
             // Check if constructor (no return type and name matches class)
-            if (match[1].str().empty() || match[1].str() == class_decl.name) {
+            if (match[3].str().empty() || match[3].str() == class_decl.name) {
                 method.is_constructor = true;
                 method.return_type = nullptr;
             } else {
-                method.return_type = parseType(match[1].str());
+                method.return_type = parseType(match[3].str());
             }
 
             // Parse parameters
-            std::string params_str = match[3].str();
+            std::string params_str = match[5].str();
             if (!params_str.empty()) {
                 parseParameters(params_str, method);
             }
 
             // Check if const method
-            method.is_const = match[4].matched;
+            method.is_const = match[6].matched;
 
             // Store body if present
-            if (match[5].matched) {
-                method.body = match[5].str();
+            if (match[8].matched) {
+                method.body = match[8].str();
             }
 
             class_decl.methods.push_back(method);

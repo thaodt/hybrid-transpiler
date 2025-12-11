@@ -122,12 +122,9 @@ void GoCodeGenerator::generateClass(const ClassDecl& class_decl) {
         }
     }
 
-    // Note about inheritance
+    // Generate interfaces for inheritance
     if (!class_decl.base_classes.empty()) {
-        writeLine("// Note: C++ inheritance converted to interface embedding");
-        for (const auto& base : class_decl.base_classes) {
-            writeLine("// TODO: Implement interface for base class: " + base);
-        }
+        generateInterfaceImplementations(class_decl);
         writeLine("");
     }
 }
@@ -865,6 +862,72 @@ void GoCodeGenerator::generateAsyncTask(const AsyncTaskInfo& task) {
     }
 
     writeLine("");
+}
+
+void GoCodeGenerator::generateInterfaceImplementations(const ClassDecl& class_decl) {
+    writeLine("// Interface definitions for inherited base classes");
+    writeLine("");
+
+    for (const auto& base_class_name : class_decl.base_classes) {
+        generateInterfaceForBaseClass(base_class_name, class_decl);
+        writeLine("");
+    }
+}
+
+void GoCodeGenerator::generateInterfaceForBaseClass(const std::string& base_class_name, const ClassDecl& derived_class) {
+    // Generate interface definition based on base class name
+    std::string interface_name = capitalize(sanitizeName(base_class_name));
+
+    writeLine("// Interface representing C++ base class: " + base_class_name);
+    writeLine("type " + interface_name + " interface {");
+    indent();
+
+    // Extract public virtual methods to define interface
+    bool has_virtual_methods = false;
+    for (const auto& method : derived_class.methods) {
+        if (method.is_virtual && !method.is_constructor && !method.is_destructor) {
+            has_virtual_methods = true;
+
+            // Generate interface method signature
+            std::stringstream sig;
+            sig << capitalize(sanitizeName(method.name)) << "(";
+
+            // Add parameters (no receiver in interface)
+            for (size_t i = 0; i < method.parameters.size(); ++i) {
+                const auto& param = method.parameters[i];
+                sig << sanitizeName(param.name) << " " << convertType(param.type);
+
+                if (i < method.parameters.size() - 1) {
+                    sig << ", ";
+                }
+            }
+
+            sig << ")";
+
+            // Return type
+            if (method.return_type && method.return_type->kind != TypeKind::Void) {
+                sig << " " << convertType(method.return_type);
+            }
+
+            writeLine(sig.str());
+        }
+    }
+
+    // If no virtual methods found, add a placeholder
+    if (!has_virtual_methods) {
+        writeLine("// No virtual methods found in derived class");
+        writeLine("// Add base class methods here as needed");
+    }
+
+    dedent();
+    writeLine("}");
+    writeLine("");
+
+    // Add a comment showing that the derived class implements this interface
+    std::string struct_name = capitalize(sanitizeName(derived_class.name));
+    writeLine("// " + struct_name + " implements " + interface_name + " interface");
+    writeLine("// Verification (compile-time check):");
+    writeLine("var _ " + interface_name + " = (*" + struct_name + ")(nil)");
 }
 
 } // namespace hybrid

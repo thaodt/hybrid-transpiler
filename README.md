@@ -494,12 +494,119 @@ func (this *ThreadSafeCounter) RunParallel() {
 }
 ```
 
+### Example 6: Inheritance and Virtual Functions
+
+**Input (C++):**
+```cpp
+class Shape {
+public:
+    virtual double area() const = 0;
+    virtual double perimeter() const = 0;
+    virtual void draw() const {}
+};
+
+class Circle : public Shape {
+private:
+    double radius;
+
+public:
+    Circle(double r) : radius(r) {}
+
+    virtual double area() const {
+        return 3.14159 * radius * radius;
+    }
+
+    virtual double perimeter() const {
+        return 2 * 3.14159 * radius;
+    }
+
+    virtual void draw() const {
+        // Draw a circle
+    }
+};
+```
+
+**Output (Rust):**
+```rust
+// Trait representing C++ base class: Shape
+pub trait Shape {
+    fn area(&self) -> f64;
+    fn perimeter(&self) -> f64;
+    fn draw(&self);
+}
+
+pub struct Circle {
+    pub radius: f64,
+}
+
+impl Circle {
+    pub fn new(r: f64) -> Self {
+        Self { radius: r }
+    }
+}
+
+impl Shape for Circle {
+    fn area(&self) -> f64 {
+        return 3.14159 * self.radius * self.radius;
+    }
+
+    fn perimeter(&self) -> f64 {
+        return 2.0 * 3.14159 * self.radius;
+    }
+
+    fn draw(&self) {
+        // Draw a circle
+    }
+}
+
+// Usage with trait objects:
+// let shape: Box<dyn Shape> = Box::new(Circle::new(5.0));
+// println!("Area: {}", shape.area());
+```
+
+**Output (Go):**
+```go
+// Interface representing C++ base class: Shape
+type Shape interface {
+    Area() float64
+    Perimeter() float64
+    Draw()
+}
+
+type Circle struct {
+    Radius float64
+}
+
+func NewCircle(r float64) *Circle {
+    return &Circle{Radius: r}
+}
+
+func (this *Circle) Area() float64 {
+    return 3.14159 * this.Radius * this.Radius
+}
+
+func (this *Circle) Perimeter() float64 {
+    return 2 * 3.14159 * this.Radius
+}
+
+func (this *Circle) Draw() {
+    // Draw a circle
+}
+
+// Verification (compile-time check):
+var _ Shape = (*Circle)(nil)
+
+// Usage:
+// var shape Shape = NewCircle(5.0)
+// fmt.Println("Area:", shape.Area())
+```
+
 ## Feature Support Matrix
 
 | C++ Feature | Rust | Go | Status |
 |-------------|------|-----|--------|
 | Classes | Struct + impl | Struct + methods | ✅ Supported |
-| Inheritance | Traits | Interfaces | ✅ Supported |
+| **Inheritance** | **Traits** | **Interfaces** | **✅ Fully Supported** |
 | Templates | Generics | Generics | ✅ Supported |
 | Smart Pointers | Box/Rc/Arc | GC pointers | ✅ Supported |
 | **Exceptions** | **Result/panic** | **error values** | **✅ Supported** |
@@ -508,9 +615,9 @@ func (this *ThreadSafeCounter) RunParallel() {
 | **Multithreading** | **std::thread/Arc<Mutex>** | **goroutines/sync** | **✅ Supported** |
 | **Async/Await** | **async/await** | **goroutines/channels** | **✅ Supported** |
 | **Coroutines** | **async fn** | **channel-based** | **✅ Supported** |
+| **Virtual Functions** | **dyn Trait** | **Interfaces** | **✅ Fully Supported** |
 | Operator Overload | Traits | N/A | ⚠️ Partial |
 | Multiple Inheritance | Trait composition | N/A | ⚠️ Partial |
-| Virtual Functions | dyn Trait | Interfaces | ✅ Supported |
 
 ### STL Container Conversion Table
 
@@ -704,6 +811,11 @@ Execution time (Intel Core i7-12700K, 32GB RAM):
   - C++20 coroutines → Go goroutines + channels
   - std::future/promise → Rust futures
   - std::async → tokio::spawn / goroutines
+- [x] **Inheritance and virtual functions** - ✅ Implemented!
+  - C++ inheritance → Rust traits
+  - C++ inheritance → Go interfaces
+  - Virtual method detection and conversion
+  - Pure virtual functions → trait/interface definitions
 - [ ] FFI generation support
 - [ ] Advanced data race detection
 

@@ -44,6 +44,10 @@ private:
     void generateVariable(const Variable& var);
     void generateTryCatchAsResult(const Function& func);
 
+    // Inheritance/Trait code generation
+    void generateTraitImplementations(const ClassDecl& class_decl);
+    void generateTraitForBaseClass(const std::string& base_class_name, const ClassDecl& derived_class);
+
     // Threading code generation
     void generateThreadingCode(const Function& func);
     void generateThreadCreation(const ThreadInfo& thread);
@@ -79,6 +83,10 @@ private:
     void generateFunction(const Function& func, const std::string& receiver_type = "");
     void generateVariable(const Variable& var);
     void generateTryCatchAsError(const Function& func);
+
+    // Inheritance/Interface code generation
+    void generateInterfaceImplementations(const ClassDecl& class_decl);
+    void generateInterfaceForBaseClass(const std::string& base_class_name, const ClassDecl& derived_class);
 
     // Threading code generation
     void generateThreadingCode(const Function& func);

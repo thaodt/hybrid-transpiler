@@ -90,10 +90,7 @@ void RustCodeGenerator::generateClass(const ClassDecl& class_decl) {
     // Generate trait implementations for base classes
     if (!class_decl.base_classes.empty()) {
         writeLine("");
-        writeLine("// Note: C++ inheritance converted to trait implementation");
-        for (const auto& base : class_decl.base_classes) {
-            writeLine("// TODO: Implement trait for base class: " + base);
-        }
+        generateTraitImplementations(class_decl);
     }
 }
 
@@ -993,6 +990,130 @@ void RustCodeGenerator::generateFuture(const FutureInfo& future) {
     }
 
     writeLine("");
+}
+
+void RustCodeGenerator::generateTraitImplementations(const ClassDecl& class_decl) {
+    writeLine("// Trait implementations for inherited base classes");
+    writeLine("");
+
+    for (const auto& base_class_name : class_decl.base_classes) {
+        generateTraitForBaseClass(base_class_name, class_decl);
+        writeLine("");
+    }
+}
+
+void RustCodeGenerator::generateTraitForBaseClass(const std::string& base_class_name, const ClassDecl& derived_class) {
+    // Generate trait definition based on base class name
+    std::string trait_name = sanitizeName(base_class_name);
+    // Capitalize first letter for trait name (Rust convention)
+    if (!trait_name.empty()) {
+        trait_name[0] = std::toupper(trait_name[0]);
+    }
+
+    writeLine("// Trait representing C++ base class: " + base_class_name);
+    writeLine("pub trait " + trait_name + " {");
+    indent();
+
+    // Extract public virtual methods to define trait interface
+    bool has_virtual_methods = false;
+    for (const auto& method : derived_class.methods) {
+        if (method.is_virtual && !method.is_constructor && !method.is_destructor) {
+            has_virtual_methods = true;
+
+            // Generate trait method signature
+            std::stringstream sig;
+            sig << "fn " << sanitizeName(method.name) << "(";
+
+            // Add self parameter
+            if (method.is_const) {
+                sig << "&self";
+            } else {
+                sig << "&mut self";
+            }
+
+            // Add other parameters
+            for (size_t i = 0; i < method.parameters.size(); ++i) {
+                const auto& param = method.parameters[i];
+                sig << ", " << sanitizeName(param.name) << ": " << convertType(param.type);
+            }
+
+            sig << ")";
+
+            // Return type
+            if (method.return_type && method.return_type->kind != TypeKind::Void) {
+                sig << " -> " << convertType(method.return_type);
+            }
+
+            sig << ";";
+            writeLine(sig.str());
+        }
+    }
+
+    // If no virtual methods found, add a placeholder
+    if (!has_virtual_methods) {
+        writeLine("// No virtual methods found in derived class");
+        writeLine("// Add base class methods here as needed");
+    }
+
+    dedent();
+    writeLine("}");
+    writeLine("");
+
+    // Generate trait implementation for the derived class
+    std::string struct_name = sanitizeName(derived_class.name);
+    writeLine("impl " + trait_name + " for " + struct_name + " {");
+    indent();
+
+    // Implement virtual methods
+    for (const auto& method : derived_class.methods) {
+        if (method.is_virtual && !method.is_constructor && !method.is_destructor) {
+            std::stringstream sig;
+            sig << "fn " << sanitizeName(method.name) << "(";
+
+            // Add self parameter
+            if (method.is_const) {
+                sig << "&self";
+            } else {
+                sig << "&mut self";
+            }
+
+            // Add other parameters
+            for (size_t i = 0; i < method.parameters.size(); ++i) {
+                const auto& param = method.parameters[i];
+                sig << ", " << sanitizeName(param.name) << ": " << convertType(param.type);
+            }
+
+            sig << ")";
+
+            // Return type
+            if (method.return_type && method.return_type->kind != TypeKind::Void) {
+                sig << " -> " << convertType(method.return_type);
+            }
+
+            writeLine(sig.str() + " {");
+            indent();
+
+            if (!method.body.empty()) {
+                writeLine("// Method body:");
+                writeLine(method.body);
+            } else {
+                writeLine("// TODO: Implement method");
+                writeLine("todo!()");
+            }
+
+            dedent();
+            writeLine("}");
+            writeLine("");
+        }
+    }
+
+    // If no virtual methods, add placeholder
+    if (!has_virtual_methods) {
+        writeLine("// No methods to implement");
+    }
+
+    dedent();
+    writeLine("}");
 }
 
 } // namespace hybrid
