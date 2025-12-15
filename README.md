@@ -616,6 +616,7 @@ var _ Shape = (*Circle)(nil)
 | **Async/Await** | **async/await** | **goroutines/channels** | **✅ Supported** |
 | **Coroutines** | **async fn** | **channel-based** | **✅ Supported** |
 | **Virtual Functions** | **dyn Trait** | **Interfaces** | **✅ Fully Supported** |
+| **FFI Generation** | **extern "C" + unsafe** | **cgo bindings** | **✅ Fully Supported** |
 | Operator Overload | Traits | N/A | ⚠️ Partial |
 | Multiple Inheritance | Trait composition | N/A | ⚠️ Partial |
 
@@ -712,22 +713,28 @@ hybrid-transpiler/
 │   │   ├── exception_analyzer.cpp          # Exception analysis
 │   │   ├── template_analyzer.cpp           # Template analysis
 │   │   ├── thread_analyzer.cpp             # Threading analysis
-│   │   └── async_analyzer.cpp              # NEW: Async/coroutine analysis
+│   │   └── async_analyzer.cpp              # Async/coroutine analysis
 │   ├── ir/               # Intermediate representation
 │   │   ├── ir_builder.cpp
 │   │   ├── type_system.cpp
 │   │   └── ownership_analyzer.cpp
 │   ├── codegen/
 │   │   ├── rust/         # Rust code generator
-│   │   │   ├── rust_codegen.cpp            # Updated: Threading support
+│   │   │   ├── rust_codegen.cpp            # Threading support
 │   │   │   └── rust_formatter.cpp
 │   │   └── go/           # Go code generator
-│   │       ├── go_codegen.cpp              # Updated: Goroutine support
+│   │       ├── go_codegen.cpp              # Goroutine support
 │   │       └── go_formatter.cpp
+│   ├── ffi/              # FFI generation (NEW!)
+│   │   ├── ffi_analyzer.cpp                # FFI compatibility analyzer
+│   │   ├── rust_ffi_gen.cpp                # Rust FFI bindings generator
+│   │   ├── go_ffi_gen.cpp                  # Go cgo bindings generator
+│   │   └── c_wrapper_gen.cpp               # C wrapper generator
 │   └── main.cpp
 ├── include/              # Public headers
-│   ├── ir.h              # Updated: Threading types added
-│   └── codegen.h         # Updated: Threading methods added
+│   ├── ir.h              # Threading types
+│   ├── codegen.h         # Threading methods
+│   └── ffi.h             # NEW: FFI generation API
 ├── tests/                # Test cases
 ├── examples/             # Example transformations
 │   ├── stl_containers.cpp
@@ -741,9 +748,12 @@ hybrid-transpiler/
 │   ├── multithreading.cpp                  # Threading examples
 │   ├── multithreading_expected.rs          # Expected Rust output
 │   ├── multithreading_expected.go          # Expected Go output
-│   ├── async_await.cpp                     # NEW: Async/coroutine examples
-│   ├── async_await_expected.rs             # NEW: Expected Rust output
-│   └── async_await_expected.go             # NEW: Expected Go output
+│   ├── async_await.cpp                     # Async/coroutine examples
+│   ├── async_await_expected.rs             # Expected Rust output
+│   ├── async_await_expected.go             # Expected Go output
+│   ├── ffi_example.cpp                     # NEW: FFI C++ example
+│   ├── ffi_example_rust.rs                 # NEW: Expected Rust FFI bindings
+│   └── ffi_example_go.go                   # NEW: Expected Go cgo bindings
 ├── docs/                 # Documentation
 ├── CMakeLists.txt
 └── README.md
@@ -791,6 +801,341 @@ Execution time (Intel Core i7-12700K, 32GB RAM):
 - Operator overloading partially restricted (not available in Go)
 - C++-specific optimizations may be lost
 
+## FFI Generation
+
+The transpiler can generate Foreign Function Interface (FFI) bindings that allow Rust and Go to call C++ libraries directly through C ABI, without full transpilation. This is useful when:
+- You want to use a C++ library from Rust/Go without rewriting it
+- Performance-critical C++ code needs to be called from safe languages
+- Gradual migration from C++ to Rust/Go
+- Interfacing with existing C++ ecosystems
+
+### How FFI Generation Works
+
+```
+┌─────────────────────────────────────────┐
+│         C++ Library Code                │
+│  (functions, classes, structs)          │
+└──────────────┬──────────────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────────┐
+│  FFI Analyzer                           │
+│  - Detect FFI-compatible types          │
+│  - Analyze function signatures          │
+│  - Check for exceptions/templates       │
+└──────────────┬──────────────────────────┘
+               │
+        ┌──────┴──────┐
+        ▼             ▼
+┌──────────────┐ ┌─────────────────┐
+│ C Wrapper    │ │ FFI Bindings    │
+│ Generator    │ │ Generator       │
+│              │ │ (Rust/Go)       │
+└──────┬───────┘ └─────┬───────────┘
+       │               │
+       ▼               ▼
+┌──────────────┐ ┌─────────────────┐
+│ extern "C"   │ │ Safe Wrappers   │
+│ C Headers    │ │ (Rust/Go)       │
+└──────────────┘ └─────────────────┘
+```
+
+### FFI Compatibility
+
+Not all C++ code is FFI-compatible. The analyzer checks for:
+
+**✅ FFI-Compatible:**
+- POD (Plain Old Data) types: `int`, `float`, `struct` with primitive fields
+- Pointers to primitives: `int*`, `const char*`
+- Functions with C ABI: `extern "C"`
+- Simple structs without inheritance
+
+**❌ Not FFI-Compatible:**
+- Functions that throw exceptions
+- Template functions (need monomorphization)
+- C++ standard library types (`std::string`, `std::vector`)
+- Classes with virtual functions (requires opaque pointer pattern)
+- Functions returning non-POD types
+
+### Type Mapping
+
+| C++ Type | C Type | Rust FFI Type | Go cgo Type |
+|----------|--------|---------------|-------------|
+| `int32_t` | `int32_t` | `i32` | `C.int32_t` |
+| `uint64_t` | `uint64_t` | `u64` | `C.uint64_t` |
+| `float` | `float` | `f32` | `C.float` |
+| `double` | `double` | `f64` | `C.double` |
+| `const char*` | `const char*` | `*const i8` | `*C.char` |
+| `void*` | `void*` | `*mut c_void` | `unsafe.Pointer` |
+| `size_t` | `size_t` | `usize` | `C.size_t` |
+
+### Example: C++ Library with FFI
+
+**C++ Library (`ffi_example.cpp`):**
+```cpp
+#include <cstdint>
+
+// Simple function - FFI compatible
+extern "C" int32_t add(int32_t a, int32_t b) {
+    return a + b;
+}
+
+// Simple struct - FFI compatible
+struct Point {
+    float x;
+    float y;
+};
+
+extern "C" Point create_point(float x, float y) {
+    Point p;
+    p.x = x;
+    p.y = y;
+    return p;
+}
+
+extern "C" float point_distance(const Point* p) {
+    return p->x * p->x + p->y * p->y;
+}
+
+// C++ class with opaque handle pattern
+class Calculator {
+private:
+    int32_t value_;
+public:
+    Calculator(int32_t v) : value_(v) {}
+    int32_t getValue() const { return value_; }
+    void add(int32_t v) { value_ += v; }
+};
+
+// C API for Calculator class
+extern "C" {
+    void* calculator_new(int32_t initial_value) {
+        return new Calculator(initial_value);
+    }
+
+    void calculator_delete(void* calc) {
+        delete static_cast<Calculator*>(calc);
+    }
+
+    int32_t calculator_get_value(const void* calc) {
+        return static_cast<const Calculator*>(calc)->getValue();
+    }
+
+    void calculator_add(void* calc, int32_t value) {
+        static_cast<Calculator*>(calc)->add(value);
+    }
+}
+```
+
+**Generated Rust FFI Bindings:**
+```rust
+use std::ffi::c_void;
+
+#[link(name = "ffi_example")]
+extern "C" {
+    fn add(a: i32, b: i32) -> i32;
+    fn create_point(x: f32, y: f32) -> Point;
+    fn point_distance(p: *const Point) -> f32;
+
+    fn calculator_new(initial_value: i32) -> *mut c_void;
+    fn calculator_delete(calc: *mut c_void);
+    fn calculator_get_value(calc: *const c_void) -> i32;
+    fn calculator_add(calc: *mut c_void, value: i32);
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct Point {
+    pub x: f32,
+    pub y: f32,
+}
+
+impl Point {
+    pub fn new(x: f32, y: f32) -> Self {
+        unsafe { create_point(x, y) }
+    }
+
+    pub fn distance(&self) -> f32 {
+        unsafe { point_distance(self as *const Point) }
+    }
+}
+
+// Safe wrapper for Calculator
+pub struct Calculator {
+    ptr: *mut c_void,
+}
+
+impl Calculator {
+    pub fn new(initial_value: i32) -> Self {
+        let ptr = unsafe { calculator_new(initial_value) };
+        Calculator { ptr }
+    }
+
+    pub fn get_value(&self) -> i32 {
+        unsafe { calculator_get_value(self.ptr) }
+    }
+
+    pub fn add(&mut self, value: i32) {
+        unsafe { calculator_add(self.ptr, value) }
+    }
+}
+
+// Automatic cleanup with RAII
+impl Drop for Calculator {
+    fn drop(&mut self) {
+        unsafe { calculator_delete(self.ptr); }
+    }
+}
+
+// Usage
+fn main() {
+    let result = unsafe { add(10, 20) };
+    println!("10 + 20 = {}", result);
+
+    let p = Point::new(3.0, 4.0);
+    println!("Distance: {}", p.distance());
+
+    let mut calc = Calculator::new(5);
+    calc.add(10);
+    println!("Calculator value: {}", calc.get_value());
+    // calc automatically deleted when dropped
+}
+```
+
+**Generated Go FFI Bindings (cgo):**
+```go
+package main
+
+/*
+#cgo LDFLAGS: -L./lib -lffi_example -lstdc++
+#include <stdlib.h>
+#include <stdint.h>
+
+int32_t add(int32_t a, int32_t b);
+
+typedef struct {
+    float x;
+    float y;
+} Point;
+
+Point create_point(float x, float y);
+float point_distance(const Point* p);
+
+void* calculator_new(int32_t initial_value);
+void calculator_delete(void* calc);
+int32_t calculator_get_value(const void* calc);
+void calculator_add(void* calc, int32_t value);
+*/
+import "C"
+import (
+    "fmt"
+    "unsafe"
+)
+
+// Point wrapper
+type Point struct {
+    X float32
+    Y float32
+}
+
+func NewPoint(x, y float32) Point {
+    cPoint := C.create_point(C.float(x), C.float(y))
+    return Point{
+        X: float32(cPoint.x),
+        Y: float32(cPoint.y),
+    }
+}
+
+func (p *Point) Distance() float32 {
+    cPoint := C.Point{x: C.float(p.X), y: C.float(p.Y)}
+    return float32(C.point_distance(&cPoint))
+}
+
+// Calculator wrapper
+type Calculator struct {
+    ptr unsafe.Pointer
+}
+
+func NewCalculator(initialValue int32) *Calculator {
+    ptr := C.calculator_new(C.int32_t(initialValue))
+    return &Calculator{ptr: ptr}
+}
+
+func (c *Calculator) Delete() {
+    if c.ptr != nil {
+        C.calculator_delete(c.ptr)
+        c.ptr = nil
+    }
+}
+
+func (c *Calculator) GetValue() int32 {
+    return int32(C.calculator_get_value(c.ptr))
+}
+
+func (c *Calculator) Add(value int32) {
+    C.calculator_add(c.ptr, C.int32_t(value))
+}
+
+// Usage
+func main() {
+    result := int32(C.add(C.int32_t(10), C.int32_t(20)))
+    fmt.Printf("10 + 20 = %d\n", result)
+
+    p := NewPoint(3.0, 4.0)
+    fmt.Printf("Distance: %.1f\n", p.Distance())
+
+    calc := NewCalculator(5)
+    defer calc.Delete()  // Explicit cleanup
+
+    calc.Add(10)
+    fmt.Printf("Calculator value: %d\n", calc.GetValue())
+}
+```
+
+### Using FFI Generation
+
+```bash
+# Generate Rust FFI bindings
+hybrid-transpiler --input mylib.cpp --ffi rust --output mylib_ffi.rs
+
+# Generate Go cgo bindings
+hybrid-transpiler --input mylib.cpp --ffi go --output mylib_ffi.go
+
+# Generate C wrapper headers (for manual use)
+hybrid-transpiler --input mylib.cpp --ffi c-wrapper --output mylib_wrapper.h
+```
+
+### FFI vs Full Transpilation
+
+| Aspect | FFI Bindings | Full Transpilation |
+|--------|--------------|-------------------|
+| **Code Ownership** | Keep C++ code | Migrate to Rust/Go |
+| **Performance** | Direct C ABI calls (minimal overhead) | Native Rust/Go performance |
+| **Safety** | Requires `unsafe` in Rust | Fully safe Rust/Go code |
+| **Build Complexity** | Need C++ compiler + linker | Pure Rust/Go build |
+| **Maintenance** | Two codebases (C++ + bindings) | Single codebase |
+| **Use Case** | Library integration, gradual migration | Complete rewrite, long-term maintenance |
+
+### FFI Best Practices
+
+1. **Rust FFI:**
+   - Always wrap `unsafe` extern calls in safe functions
+   - Use `#[repr(C)]` for structs passed across FFI boundary
+   - Implement `Drop` trait for cleanup of C++ objects
+   - Use `CString` for string conversions, never raw pointers
+
+2. **Go cgo:**
+   - Minimize cgo calls (each call has overhead)
+   - Use `defer` for cleanup functions
+   - Be careful with pointer lifetimes
+   - Don't pass Go pointers to C that point to other Go pointers
+
+3. **C++ Side:**
+   - Use `extern "C"` to prevent name mangling
+   - Never throw exceptions across FFI boundary
+   - Use POD types or opaque pointers
+   - Provide explicit constructor/destructor functions for classes
+
 ## Roadmap
 
 ### v0.1 (Current)
@@ -816,7 +1161,13 @@ Execution time (Intel Core i7-12700K, 32GB RAM):
   - C++ inheritance → Go interfaces
   - Virtual method detection and conversion
   - Pure virtual functions → trait/interface definitions
-- [ ] FFI generation support
+- [x] **FFI generation support** - ✅ Implemented!
+  - FFI compatibility analyzer
+  - Rust FFI bindings generation (extern "C" + safe wrappers)
+  - Go cgo bindings generation
+  - C wrapper generator for C++ classes
+  - Type mapping (C++ ↔ C ↔ Rust/Go)
+  - Opaque pointer pattern for C++ objects
 - [ ] Advanced data race detection
 
 ### v1.0 (Future)
