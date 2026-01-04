@@ -79,7 +79,7 @@ void RustCodeGenerator::generateClass(const ClassDecl& class_decl) {
         indent();
 
         for (const auto& method : class_decl.methods) {
-            generateFunction(method);
+            generateFunction(method, true);  // true = is_method
             writeLine("");
         }
 
@@ -94,7 +94,7 @@ void RustCodeGenerator::generateClass(const ClassDecl& class_decl) {
     }
 }
 
-void RustCodeGenerator::generateFunction(const Function& func) {
+void RustCodeGenerator::generateFunction(const Function& func, bool is_method) {
     // If function is async or coroutine, use async generation
     if (func.is_async || func.coroutine_info.is_coroutine) {
         generateAsyncFunction(func);
@@ -117,8 +117,8 @@ void RustCodeGenerator::generateFunction(const Function& func) {
 
     sig << "(";
 
-    // Add self parameter for methods
-    if (!func.is_static && !func.is_constructor) {
+    // Add self parameter for methods (not standalone functions)
+    if (is_method && !func.is_static && !func.is_constructor) {
         if (func.is_const) {
             sig << "&self";
         } else {
@@ -521,7 +521,7 @@ std::string RustCodeGenerator::convertTemplateParametersToRust(const std::vector
         if (!first) ss << ", ";
         first = false;
 
-        if (param.kind == TemplateParameter::Type) {
+        if (param.kind == TemplateParameter::TypeParam) {
             ss << param.name;
 
             // Add trait bounds if constraints exist
@@ -560,7 +560,7 @@ std::string RustCodeGenerator::convertTemplateArgsToRust(const std::vector<Templ
         if (!first) ss << ", ";
         first = false;
 
-        if (param.kind == TemplateParameter::Type) {
+        if (param.kind == TemplateParameter::TypeParam) {
             ss << param.name;
         } else if (param.kind == TemplateParameter::NonType) {
             ss << param.name;

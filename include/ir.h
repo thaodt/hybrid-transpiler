@@ -129,9 +129,9 @@ public:
 class TemplateParameter {
 public:
     enum Kind {
-        Type,           // typename T or class T
+        TypeParam,      // typename T or class T
         NonType,        // int N
-        Template        // template<typename> class C
+        TemplateParam   // template<typename> class C
     };
 
     Kind kind;

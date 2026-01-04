@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.15)
-project(HybridTranspiler VERSION 0.1.0 LANGUAGES CXX)
+project(HybridTranspiler VERSION 0.1.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -41,30 +41,36 @@ set(SOURCES
 # Executable
 add_executable(hybrid-transpiler ${SOURCES})
 
-# Link against Clang libraries
-target_link_libraries(hybrid-transpiler
-    clangTooling
-    clangFrontend
-    clangDriver
-    clangSerialization
-    clangParse
-    clangSema
-    clangAnalysis
-    clangAST
-    clangBasic
-    clangEdit
-    clangLex
-    clangRewrite
-)
+# Link against Clang and LLVM libraries
+# On systems with shared libs (Arch, Fedora), use clang-cpp and LLVM
+# On systems with static libs (Ubuntu), use individual libraries
+if(TARGET clang-cpp)
+    # Shared library build (Arch Linux, etc.)
+    target_link_libraries(hybrid-transpiler clang-cpp LLVM)
+else()
+    # Static library build (Ubuntu, etc.)
+    target_link_libraries(hybrid-transpiler
+        clangTooling
+        clangFrontend
+        clangDriver
+        clangSerialization
+        clangParse
+        clangSema
+        clangAnalysis
+        clangAST
+        clangBasic
+        clangEdit
+        clangLex
+        clangRewrite
+    )
 
-# Link against LLVM libraries
-llvm_map_components_to_libnames(llvm_libs
-    support
-    core
-    irreader
-)
-
-target_link_libraries(hybrid-transpiler ${llvm_libs})
+    llvm_map_components_to_libnames(llvm_libs
+        support
+        core
+        irreader
+    )
+    target_link_libraries(hybrid-transpiler ${llvm_libs})
+endif()
 
 # Installation
 install(TARGETS hybrid-transpiler

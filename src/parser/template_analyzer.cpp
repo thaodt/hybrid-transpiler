@@ -68,7 +68,7 @@ private:
 
         // Check for typename/class (type parameter)
         if (trimmed.find("typename") == 0 || trimmed.find("class") == 0) {
-            param.kind = TemplateParameter::Type;
+            param.kind = TemplateParameter::TypeParam;
 
             // Extract name and default value
             size_t name_start = trimmed.find(' ');
@@ -87,7 +87,7 @@ private:
         }
         // Check for template template parameter
         else if (trimmed.find("template") == 0) {
-            param.kind = TemplateParameter::Template;
+            param.kind = TemplateParameter::TemplateParam;
             // Parse nested template
             // e.g., "template<typename> class Container"
             size_t class_pos = trimmed.rfind("class");
@@ -208,7 +208,7 @@ public:
             if (!first) ss << ", ";
             first = false;
 
-            if (param.kind == TemplateParameter::Type) {
+            if (param.kind == TemplateParameter::TypeParam) {
                 ss << param.name;
 
                 // Add trait bounds if constraints exist
@@ -251,7 +251,7 @@ public:
             if (!first) ss << ", ";
             first = false;
 
-            if (param.kind == TemplateParameter::Type) {
+            if (param.kind == TemplateParameter::TypeParam) {
                 ss << param.name;
 
                 // Add constraints if available

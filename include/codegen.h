@@ -40,7 +40,7 @@ public:
 
 private:
     void generateClass(const ClassDecl& class_decl);
-    void generateFunction(const Function& func);
+    void generateFunction(const Function& func, bool is_method = false);
     void generateVariable(const Variable& var);
     void generateTryCatchAsResult(const Function& func);
 

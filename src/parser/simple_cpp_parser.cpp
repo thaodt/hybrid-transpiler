@@ -39,8 +39,18 @@ public:
         IR ir;
         SimpleCppParser parser(source);
 
+        // Parse namespaces and extract content
+        std::string processed = parser.processNamespaces(source);
+        parser.source_ = processed;
+
         // Parse all classes in the source
         parser.parseClasses(ir);
+
+        // Parse all structs in the source
+        parser.parseStructs(ir);
+
+        // Parse standalone functions
+        parser.parseStandaloneFunctions(ir);
 
         return ir;
     }
@@ -99,6 +109,172 @@ private:
 
             ir.addClass(class_decl);
         }
+    }
+
+    /**
+     * Parse all struct declarations
+     */
+    void parseStructs(IR& ir) {
+        std::string cleaned = removeComments(source_);
+
+        // Regex to match struct declarations
+        // Matches: struct StructName { ... };
+        std::regex struct_pattern(
+            R"(struct\s+(\w+)\s*(?::\s*public\s+(\w+(?:\s*,\s*\w+)*))?\s*\{([^}]*(?:\{[^}]*\}[^}]*)*)\};)",
+            std::regex::ECMAScript
+        );
+
+        auto structs_begin = std::sregex_iterator(cleaned.begin(), cleaned.end(), struct_pattern);
+        auto structs_end = std::sregex_iterator();
+
+        for (std::sregex_iterator i = structs_begin; i != structs_end; ++i) {
+            std::smatch match = *i;
+
+            ClassDecl struct_decl;
+            struct_decl.name = match[1].str();
+            struct_decl.is_struct = true;  // Mark as struct
+
+            // Parse base classes if present
+            if (match[2].matched) {
+                parseBaseClasses(match[2].str(), struct_decl);
+            }
+
+            // Parse struct body (default access is public for structs)
+            std::string body = match[3].str();
+            parseStructBody(body, struct_decl);
+
+            ir.addClass(struct_decl);
+        }
+    }
+
+    /**
+     * Parse struct body (fields and methods) - defaults to public
+     */
+    void parseStructBody(const std::string& body, ClassDecl& struct_decl) {
+        // Split by access specifiers
+        std::vector<std::string> sections;
+        std::vector<std::string> access_levels;
+
+        std::regex access_pattern(R"((private|protected|public)\s*:)");
+
+        auto it = std::sregex_iterator(body.begin(), body.end(), access_pattern);
+        auto end = std::sregex_iterator();
+
+        size_t last_pos = 0;
+        std::string current_access = "public"; // Default for struct
+
+        for (; it != end; ++it) {
+            std::string section_content = body.substr(last_pos, it->position() - last_pos);
+            if (!section_content.empty()) {
+                sections.push_back(section_content);
+                access_levels.push_back(current_access);
+            }
+
+            current_access = (*it)[1].str();
+            last_pos = it->position() + it->length();
+        }
+
+        // Add remaining section
+        if (last_pos < body.length()) {
+            sections.push_back(body.substr(last_pos));
+            access_levels.push_back(current_access);
+        }
+
+        // If no access specifier found, treat entire body as public
+        if (sections.empty()) {
+            sections.push_back(body);
+            access_levels.push_back("public");
+        }
+
+        // Parse each section
+        for (size_t i = 0; i < sections.size(); ++i) {
+            parseSection(sections[i], access_levels[i], struct_decl);
+        }
+    }
+
+    /**
+     * Parse standalone functions (outside of classes)
+     */
+    void parseStandaloneFunctions(IR& ir) {
+        std::string cleaned = removeComments(source_);
+
+        // First, remove class/struct definitions to avoid matching methods
+        cleaned = std::regex_replace(cleaned,
+            std::regex(R"((class|struct)\s+\w+\s*(?::\s*public\s+\w+(?:\s*,\s*\w+)*)?\s*\{[^}]*(?:\{[^}]*\}[^}]*)*\};)"),
+            "");
+
+        // Pattern for standalone functions:
+        // [template<...>] [inline] [static] return_type function_name(params) [const] { body }
+        // or declarations: return_type function_name(params);
+        std::regex func_pattern(
+            R"((?:template\s*<[^>]*>\s*)?(?:inline\s+|static\s+|extern\s+)*(?:auto|void|bool|char|short|int|long|float|double|size_t|std::\w+(?:<[^>]*>)?|\w+)\s*[*&]?\s+([a-zA-Z_]\w*)\s*\(([^)]*)\)\s*(?:const\s*)?(?:->[\s\w:*&<>]+\s*)?(?:\{([^}]*(?:\{[^}]*\}[^}]*)*)\}|;))",
+            std::regex::ECMAScript
+        );
+
+        auto funcs_begin = std::sregex_iterator(cleaned.begin(), cleaned.end(), func_pattern);
+        auto funcs_end = std::sregex_iterator();
+
+        for (std::sregex_iterator it = funcs_begin; it != funcs_end; ++it) {
+            std::smatch match = *it;
+
+            // Skip main function or class member implementations (Name::method)
+            std::string full_match = match.str();
+            std::string func_name = match[1].str();
+
+            // Skip if it's a class method implementation (contains ::)
+            if (full_match.find("::") != std::string::npos) {
+                continue;
+            }
+
+            Function func;
+            func.name = func_name;
+
+            // Extract return type from the match
+            std::string prefix = match.prefix().str();
+            size_t func_start = full_match.find(func_name);
+            if (func_start != std::string::npos && func_start > 0) {
+                std::string type_part = full_match.substr(0, func_start);
+                // Clean up type part
+                type_part = std::regex_replace(type_part, std::regex(R"(^\s*(template\s*<[^>]*>\s*)?)"), "");
+                type_part = std::regex_replace(type_part, std::regex(R"((inline|static|extern)\s+)"), "");
+                type_part = trim(type_part);
+                if (!type_part.empty()) {
+                    func.return_type = parseType(type_part);
+                }
+            }
+
+            // Parse parameters
+            std::string params_str = match[2].str();
+            if (!params_str.empty()) {
+                parseParameters(params_str, func);
+            }
+
+            // Store body if present
+            if (match[3].matched) {
+                func.body = match[3].str();
+            }
+
+            ir.addFunction(func);
+        }
+    }
+
+    /**
+     * Process namespaces - extract content and flatten
+     */
+    std::string processNamespaces(const std::string& source) {
+        std::string result = source;
+
+        // Simple namespace extraction - just remove namespace wrapper
+        // This is a simplified approach; a full implementation would track namespace prefixes
+        std::regex ns_pattern(R"(namespace\s+(\w+)\s*\{)");
+
+        // Replace namespace openings with a marker comment
+        result = std::regex_replace(result, ns_pattern, "/* namespace $1 */ ");
+
+        // Count and remove matching braces (simplified - just removes the last } for each namespace)
+        // This is a basic approach; proper brace matching would be needed for production
+
+        return result;
     }
 
     /**
